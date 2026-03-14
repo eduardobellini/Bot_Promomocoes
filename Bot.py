@@ -284,6 +284,106 @@ def fetch_html(url, retries=3):
 # LOJAS
 # =========================
 
+def search_aliexpress(query):
+    items = []
+    url = f"https://pt.aliexpress.com/wholesale?SearchText={quote_plus(query)}"
+
+    try:
+        html_text = fetch_html(url)
+        soup = BeautifulSoup(html_text, "lxml")
+
+        cards = soup.select('a[href*="/item/"]')
+
+        for card in cards:
+            title = normalize_text(card.get("title") or card.get_text())
+            link = card.get("href", "")
+            price = None
+
+            if link.startswith("//"):
+                link = "https:" + link
+            elif link and not link.startswith("http"):
+                link = "https://pt.aliexpress.com" + link
+
+            if title and link:
+                items.append({
+                    "store": "AliExpress",
+                    "title": title,
+                    "price": price,
+                    "link": link,
+                })
+
+    except Exception as e:
+        print(f"Erro no AliExpress para '{query}': {e}")
+
+    return deduplicate_items(items)
+
+
+def search_shopee(query):
+    items = []
+    url = f"https://shopee.com.br/search?keyword={quote_plus(query)}"
+
+    try:
+        html_text = fetch_html(url)
+        soup = BeautifulSoup(html_text, "lxml")
+
+        cards = soup.select('a[href*="-i."]')
+
+        for card in cards:
+            title = normalize_text(card.get("title") or card.get_text())
+            link = card.get("href", "")
+            price = None
+
+            if link and not link.startswith("http"):
+                link = "https://shopee.com.br" + link
+
+            if title and link:
+                items.append({
+                    "store": "Shopee",
+                    "title": title,
+                    "price": price,
+                    "link": link,
+                })
+
+    except Exception as e:
+        print(f"Erro na Shopee para '{query}': {e}")
+
+    return deduplicate_items(items)
+
+def search_pichau(query):
+    items = []
+    url = f"https://www.pichau.com.br/search?q={quote_plus(query)}"
+
+    try:
+        html_text = fetch_html(url)
+        soup = BeautifulSoup(html_text, "lxml")
+
+        cards = soup.select("a[href*='/placa-de-video'], a[href*='/product']")
+
+        for card in cards:
+            title_el = card.select_one("h2, h3, span")
+            price_el = card.select_one("span.price, span.text-price")
+
+            title = normalize_text(title_el.get_text()) if title_el else None
+            price = parse_price(price_el.get_text()) if price_el else None
+
+            link = card.get("href")
+
+            if link and not link.startswith("http"):
+                link = "https://www.pichau.com.br" + link
+
+            if title and link:
+                items.append({
+                    "store": "Pichau",
+                    "title": title,
+                    "price": price,
+                    "link": link,
+                })
+
+    except Exception as e:
+        print(f"Erro na Pichau para '{query}': {e}")
+
+    return deduplicate_items(items)
+
 def search_kabum(query):
     items = []
     url = f"https://www.kabum.com.br/busca/{quote_plus(query)}"
@@ -355,9 +455,12 @@ def search_magalu(query):
 def collect_all_offers():
     all_items = []
     store_functions = [
-        search_kabum,
-        search_magalu,
-    ]
+    search_kabum,
+    search_magalu,
+    search_pichau,
+    search_shopee,
+    search_aliexpress,
+]
 
     for term in SEARCH_TERMS:
         for fn in store_functions:
