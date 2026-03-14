@@ -76,7 +76,7 @@ def save_sent_items(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot{8633387104:AAGvRAQHJ_umx4d-l4EmeKJWTpQmRqT65Sc}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
