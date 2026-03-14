@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from telegram import Bot
 
 TOKEN = "8633387104:AAGvRAQHJ_umx4d-l4EmeKJWTpQmRqT65Sc"
-CHAT_ID = ""
+CHAT_ID = "6960388628"
 
 bot = Bot(token=TOKEN)
 
