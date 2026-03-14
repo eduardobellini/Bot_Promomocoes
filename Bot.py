@@ -17,27 +17,45 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 CHECK_INTERVAL = 900  # 15 minutos
 SENT_FILE = "sent_items.json"
 
-KEYWORDS = [
-    "rx 6600",
-    "rx 6650 xt",
-    "rx 7600",
-    "rtx 3050",
-    "rtx 3060",
-    "rtx 4060",
-    "gtx 1660",
-    "gtx 1650",
+SEARCH_TERMS = [
+    "placa de video",
+    "gpu",
+    "rtx",
+    "gtx",
+    "rx",
 ]
 
-MAX_PRICE_BY_KEYWORD = {
-    "rx 6600": 1250.0,
-    "rx 6650 xt": 1450.0,
-    "rx 7600": 1700.0,
-    "rtx 3050": 1300.0,
-    "rtx 3060": 1700.0,
-    "rtx 4060": 2000.0,
-    "gtx 1660": 1100.0,
-    "gtx 1650": 900.0,
-}
+GPU_PATTERNS = [
+    "rtx",
+    "gtx",
+    "rx 5",
+    "rx 6",
+    "rx 7",
+    "radeon rx",
+    "geforce gtx",
+    "geforce rtx",
+]
+
+EXCLUDED_TERMS = [
+    "suporte",
+    "adaptador",
+    "cabo",
+    "case",
+    "fan",
+    "cooler",
+    "adesivo",
+    "miniatura",
+    "boneco",
+    "controle",
+    "fonte",
+    "processador",
+    "placa mae",
+    "placa-mãe",
+    "notebook",
+]
+
+MAX_GLOBAL_PRICE = 1500.0
+MIN_GLOBAL_PRICE = 250.0
 
 HEADERS = {
     "User-Agent": (
@@ -103,30 +121,28 @@ def parse_price(price_text):
     except ValueError:
         return None
 
-def get_keyword_match(title):
+def looks_like_gpu(title):
     title_lower = title.lower()
 
-    for keyword in KEYWORDS:
-        if keyword in title_lower:
-            return keyword
+    if any(term in title_lower for term in EXCLUDED_TERMS):
+        return False
 
-    return None
+    return any(pattern in title_lower for pattern in GPU_PATTERNS)
 
 def is_good_offer(title, price):
-    keyword = get_keyword_match(title)
-
-    if not keyword:
-        return False, None
-
-    limit = MAX_PRICE_BY_KEYWORD.get(keyword)
-
-    if limit is None:
-        return False, None
+    if not looks_like_gpu(title):
+        return False
 
     if price is None:
-        return False, keyword
+        return False
 
-    return price <= limit, keyword
+    if price < MIN_GLOBAL_PRICE:
+        return False
+
+    if price > MAX_GLOBAL_PRICE:
+        return False
+
+    return True
 
 def product_id(store, title, price, link):
     return f"{store}|{title}|{price}|{link}"
@@ -296,38 +312,26 @@ def collect_all_offers():
 
     store_functions = [
         search_kabum,
-        search_mercado_livre,
         search_magalu,
     ]
 
-    for keyword in KEYWORDS:
+    for term in SEARCH_TERMS:
         for fn in store_functions:
-            print(f"Buscando '{keyword}' em {fn.__name__}...")
-            results = fn(keyword)
+            print(f"Buscando '{term}' em {fn.__name__}...")
+            results = fn(term)
             all_items.extend(results)
             time.sleep(2)
 
     return all_items
 
-def format_offer_message(item, matched_keyword):
-    if item["price"] is not None:
-        price_text = f"R$ {item['price']:.2f}".replace(".", ",")
-    else:
-        price_text = "Preço não identificado"
-
-    limit = MAX_PRICE_BY_KEYWORD.get(matched_keyword)
-    if limit is not None:
-        limit_text = f"R$ {limit:.2f}".replace(".", ",")
-    else:
-        limit_text = "-"
+def format_offer_message(item):
+    price_text = f"R$ {item['price']:.2f}".replace(".", ",")
 
     return (
-        f"🔥 Promoção encontrada\n\n"
+        f"🔥 Possível promoção de GPU\n\n"
         f"🏪 Loja: {item['store']}\n"
         f"🎮 Produto: {item['title']}\n"
-        f"💰 Preço: {price_text}\n"
-        f"🎯 Alerta para: {matched_keyword.upper()}\n"
-        f"📌 Limite definido: {limit_text}\n\n"
+        f"💰 Preço: {price_text}\n\n"
         f"🔗 {item['link']}"
     )
 
@@ -340,7 +344,7 @@ def process_offers():
     new_count = 0
 
     for item in offers:
-        good, matched_keyword = is_good_offer(item["title"], item["price"])
+        good = is_good_offer(item["title"], item["price"])
 
         if not good:
             continue
@@ -350,7 +354,7 @@ def process_offers():
         if pid in sent_items:
             continue
 
-        message = format_offer_message(item, matched_keyword)
+        message = format_offer_message(item)
 
         try:
             send_telegram_message(message)
@@ -359,7 +363,6 @@ def process_offers():
                 "title": item["title"],
                 "price": item["price"],
                 "link": item["link"],
-                "keyword": matched_keyword,
                 "sent_at": int(time.time()),
             }
             new_count += 1
@@ -370,7 +373,7 @@ def process_offers():
 
     save_sent_items(sent_items)
     print(f"Novas promoções enviadas: {new_count}")
-
+    
 # =========================
 # LOOP PRINCIPAL
 # =========================
