@@ -1,4 +1,5 @@
 import requests
+import time
 from bs4 import BeautifulSoup
 from telegram import Bot
 
@@ -113,4 +114,12 @@ def executar():
     shopee()
     aliexpress()
 
-executar()
+while True:
+    try:
+        print("Procurando promoções...")
+        executar()
+
+    except Exception as e:
+        print("Erro:", e)
+
+    time.sleep(600)
