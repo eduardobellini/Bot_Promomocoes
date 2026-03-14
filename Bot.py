@@ -3,8 +3,8 @@ import time
 from bs4 import BeautifulSoup
 from telegram import Bot
 
-TOKEN = "AAGvRAQHJ_umx4d-l4EmeKJWTpQmRqT65Sc"
-CHAT_ID = "8633387104"
+TOKEN = "8633387104:AAGvRAQHJ_umx4d-l4EmeKJWTpQmRqT65Sc"
+CHAT_ID = ""
 
 bot = Bot(token=TOKEN)
 
