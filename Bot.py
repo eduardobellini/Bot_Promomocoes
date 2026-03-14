@@ -15,7 +15,7 @@ from urllib.parse import quote_plus
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-CHECK_INTERVAL = 180  # 3 minutos
+CHECK_INTERVAL = 600  
 
 SENT_FILE = "sent_items.json"
 PRICE_HISTORY_FILE = "price_history.json"
