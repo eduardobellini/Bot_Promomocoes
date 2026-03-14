@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+sent_items.json
+.env
