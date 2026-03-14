@@ -1,4 +1,5 @@
 __pycache__/
 *.pyc
 sent_items.json
+price_history.json
 .env

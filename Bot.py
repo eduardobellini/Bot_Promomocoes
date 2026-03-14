@@ -3,6 +3,7 @@ import re
 import json
 import time
 import html
+import random
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import quote_plus
@@ -14,8 +15,16 @@ from urllib.parse import quote_plus
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-CHECK_INTERVAL = 180  # 2 minutos
+CHECK_INTERVAL = 180  # 3 minutos
+
 SENT_FILE = "sent_items.json"
+PRICE_HISTORY_FILE = "price_history.json"
+
+MIN_GLOBAL_PRICE = 500.0
+MAX_GLOBAL_PRICE = 1800.0
+
+MIN_DROP_ALERT = 50.0      # alerta se cair pelo menos R$ 50
+MIN_DROP_PERCENT = 5.0     # ou pelo menos 5%
 
 SEARCH_TERMS = [
     "placa de video",
@@ -32,15 +41,14 @@ GPU_PATTERNS = [
     "rx 6",
     "rx 7",
     "radeon rx",
-    "geforce gtx",
     "geforce rtx",
+    "geforce gtx",
 ]
 
 EXCLUDED_TERMS = [
     "suporte",
     "adaptador",
     "cabo",
-    "case",
     "fan",
     "cooler",
     "adesivo",
@@ -52,21 +60,17 @@ EXCLUDED_TERMS = [
     "placa mae",
     "placa-mãe",
     "notebook",
+    "gabinete",
+    "water cooler",
+    "kit upgrade",
+    "memoria ram",
+    "ssd",
+    "mouse",
+    "teclado",
 ]
 
-MAX_GLOBAL_PRICE = 1600.0
-MIN_GLOBAL_PRICE = 250.0
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-}
-
 # =========================
-# FUNÇÕES DE AMBIENTE
+# AMBIENTE / TELEGRAM
 # =========================
 
 def validate_env():
@@ -83,7 +87,6 @@ def validate_env():
 
 def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
@@ -122,7 +125,7 @@ def parse_price(price_text):
         return None
 
 def looks_like_gpu(title):
-    title_lower = title.lower()
+    title_lower = normalize_text(title).lower()
 
     if any(term in title_lower for term in EXCLUDED_TERMS):
         return False
@@ -147,10 +150,9 @@ def is_good_offer(title, price):
 def product_id(store, title, price, link):
     return f"{store}|{title}|{price}|{link}"
 
-def fetch_html(url):
-    response = requests.get(url, headers=HEADERS, timeout=30)
-    response.raise_for_status()
-    return response.text
+def product_key(item):
+    title = normalize_text(item["title"]).lower()
+    return f"{item['store']}|{title}"
 
 def deduplicate_items(items):
     seen = set()
@@ -164,19 +166,119 @@ def deduplicate_items(items):
 
     return result
 
-def load_sent_items():
-    if not os.path.exists(SENT_FILE):
+# =========================
+# ARQUIVOS JSON
+# =========================
+
+def load_json_file(path):
+    if not os.path.exists(path):
         return {}
 
     try:
-        with open(SENT_FILE, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}
 
-def save_sent_items(data):
-    with open(SENT_FILE, "w", encoding="utf-8") as f:
+def save_json_file(path, data):
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_sent_items():
+    return load_json_file(SENT_FILE)
+
+def save_sent_items(data):
+    save_json_file(SENT_FILE, data)
+
+def load_price_history():
+    return load_json_file(PRICE_HISTORY_FILE)
+
+def save_price_history(data):
+    save_json_file(PRICE_HISTORY_FILE, data)
+
+# =========================
+# HISTÓRICO DE PREÇO
+# =========================
+
+def check_price_drop(item, history):
+    if item["price"] is None:
+        return None
+
+    key = product_key(item)
+    current_price = item["price"]
+    old_data = history.get(key)
+
+    if not old_data:
+        history[key] = {
+            "title": item["title"],
+            "store": item["store"],
+            "link": item["link"],
+            "lowest_price": current_price,
+            "last_price": current_price,
+            "last_seen": int(time.time()),
+        }
+        return None
+
+    previous_price = old_data.get("last_price")
+    lowest_price = old_data.get("lowest_price", current_price)
+
+    drop_value = 0.0
+    drop_percent = 0.0
+
+    if previous_price and current_price < previous_price:
+        drop_value = previous_price - current_price
+        drop_percent = (drop_value / previous_price) * 100
+
+    old_data["last_price"] = current_price
+    old_data["last_seen"] = int(time.time())
+
+    if current_price < lowest_price:
+        old_data["lowest_price"] = current_price
+
+    history[key] = old_data
+
+    if drop_value >= MIN_DROP_ALERT or drop_percent >= MIN_DROP_PERCENT:
+        return {
+            "previous_price": previous_price,
+            "current_price": current_price,
+            "drop_value": drop_value,
+            "drop_percent": drop_percent,
+        }
+
+    return None
+
+# =========================
+# REQUISIÇÕES
+# =========================
+
+def fetch_html(url, retries=3):
+    headers = {
+        "User-Agent": random.choice([
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        ]),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "DNT": "1",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
+    last_error = None
+
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            return response.text
+        except Exception as e:
+            last_error = e
+            print(f"Erro ao acessar {url} | tentativa {attempt + 1}/{retries}: {e}")
+            time.sleep(random.uniform(2, 5))
+
+    raise last_error
 
 # =========================
 # LOJAS
@@ -197,18 +299,10 @@ def search_kabum(query):
             title_el = card.select_one("span.nameCard, div.nameCard, span.sc-d79c9c3f-0")
             price_el = card.select_one("span.priceCard, span.sc-620f2d27-2")
 
-            title = None
-            if title_el:
-                title = normalize_text(title_el.get_text())
-            else:
-                title = normalize_text(card.get_text())
-
+            title = normalize_text(title_el.get_text()) if title_el else normalize_text(card.get_text())
             price = parse_price(price_el.get_text()) if price_el else None
 
-            if href.startswith("http"):
-                link = href
-            else:
-                link = f"https://www.kabum.com.br{href}"
+            link = href if href.startswith("http") else f"https://www.kabum.com.br{href}"
 
             if title and link:
                 items.append({
@@ -217,48 +311,8 @@ def search_kabum(query):
                     "price": price,
                     "link": link,
                 })
-
     except Exception as e:
         print(f"Erro na Kabum para '{query}': {e}")
-
-    return deduplicate_items(items)
-
-def search_mercado_livre(query):
-    items = []
-    url = f"https://lista.mercadolivre.com.br/{quote_plus(query)}"
-
-    try:
-        html_text = fetch_html(url)
-        soup = BeautifulSoup(html_text, "lxml")
-
-        cards = soup.select("li.ui-search-layout__item")
-
-        for card in cards:
-            title_el = card.select_one("h3")
-            link_el = card.select_one("a[href]")
-            whole_el = card.select_one(".andes-money-amount__fraction")
-            cents_el = card.select_one(".andes-money-amount__cents")
-
-            title = normalize_text(title_el.get_text()) if title_el else None
-            link = link_el.get("href") if link_el else None
-
-            price = None
-            if whole_el:
-                raw_price = whole_el.get_text()
-                if cents_el:
-                    raw_price += "," + cents_el.get_text()
-                price = parse_price(raw_price)
-
-            if title and link:
-                items.append({
-                    "store": "Mercado Livre",
-                    "title": title,
-                    "price": price,
-                    "link": link,
-                })
-
-    except Exception as e:
-        print(f"Erro no Mercado Livre para '{query}': {e}")
 
     return deduplicate_items(items)
 
@@ -277,18 +331,10 @@ def search_magalu(query):
             title_el = card.select_one("h2, h3")
             price_el = card.select_one('p[data-testid="price-value"], div[data-testid="price-value"]')
 
-            title = None
-            if title_el:
-                title = normalize_text(title_el.get_text())
-            else:
-                title = normalize_text(card.get_text())
-
+            title = normalize_text(title_el.get_text()) if title_el else normalize_text(card.get_text())
             price = parse_price(price_el.get_text()) if price_el else None
 
-            if href.startswith("http"):
-                link = href
-            else:
-                link = f"https://www.magazineluiza.com.br{href}"
+            link = href if href.startswith("http") else f"https://www.magazineluiza.com.br{href}"
 
             if title and link:
                 items.append({
@@ -297,19 +343,17 @@ def search_magalu(query):
                     "price": price,
                     "link": link,
                 })
-
     except Exception as e:
         print(f"Erro na Magazine Luiza para '{query}': {e}")
 
     return deduplicate_items(items)
 
 # =========================
-# BUSCA E ALERTA
+# COLETA / ALERTAS
 # =========================
 
 def collect_all_offers():
     all_items = []
-
     store_functions = [
         search_kabum,
         search_magalu,
@@ -318,43 +362,67 @@ def collect_all_offers():
     for term in SEARCH_TERMS:
         for fn in store_functions:
             print(f"Buscando '{term}' em {fn.__name__}...")
-            results = fn(term)
-            all_items.extend(results)
-            time.sleep(2)
+            try:
+                results = fn(term)
+                all_items.extend(results)
+            except Exception as e:
+                print(f"Erro em {fn.__name__} com termo '{term}': {e}")
 
-    return all_items
+            time.sleep(random.uniform(1.5, 4.0))
+
+    return deduplicate_items(all_items)
 
 def format_offer_message(item):
     price_text = f"R$ {item['price']:.2f}".replace(".", ",")
 
     return (
-        f"🔥 Possível promoção de GPU\n\n"
+        f"🔥 GPU encontrada dentro da faixa\n\n"
         f"🏪 Loja: {item['store']}\n"
         f"🎮 Produto: {item['title']}\n"
         f"💰 Preço: {price_text}\n\n"
         f"🔗 {item['link']}"
     )
 
+def format_price_drop_message(item, drop_info):
+    previous_text = f"R$ {drop_info['previous_price']:.2f}".replace(".", ",")
+    current_text = f"R$ {drop_info['current_price']:.2f}".replace(".", ",")
+    drop_value_text = f"R$ {drop_info['drop_value']:.2f}".replace(".", ",")
+    drop_percent_text = f"{drop_info['drop_percent']:.1f}%".replace(".", ",")
+
+    return (
+        f"🔥 Queda de preço detectada\n\n"
+        f"🏪 Loja: {item['store']}\n"
+        f"🎮 Produto: {item['title']}\n"
+        f"💰 Agora: {current_text}\n"
+        f"📉 Antes: {previous_text}\n"
+        f"💸 Queda: {drop_value_text} ({drop_percent_text})\n\n"
+        f"🔗 {item['link']}"
+    )
+
 def process_offers():
     sent_items = load_sent_items()
+    price_history = load_price_history()
     offers = collect_all_offers()
 
     print(f"Total de itens encontrados: {len(offers)}")
-
     new_count = 0
 
     for item in offers:
-        good = is_good_offer(item["title"], item["price"])
-
-        if not good:
+        if not is_good_offer(item["title"], item["price"]):
             continue
 
+        drop_info = check_price_drop(item, price_history)
         pid = product_id(item["store"], item["title"], item["price"], item["link"])
 
         if pid in sent_items:
             continue
 
-        message = format_offer_message(item)
+        message = None
+
+        if drop_info:
+            message = format_price_drop_message(item, drop_info)
+        else:
+            message = format_offer_message(item)
 
         try:
             send_telegram_message(message)
@@ -367,13 +435,14 @@ def process_offers():
             }
             new_count += 1
             print(f"Enviado para o Telegram: {item['title']}")
-            time.sleep(2)
+            time.sleep(random.uniform(2, 4))
         except Exception as e:
             print(f"Erro ao enviar mensagem no Telegram: {e}")
 
     save_sent_items(sent_items)
+    save_price_history(price_history)
     print(f"Novas promoções enviadas: {new_count}")
-    
+
 # =========================
 # LOOP PRINCIPAL
 # =========================
@@ -383,7 +452,7 @@ def main():
     print("Bot iniciado com sucesso.")
 
     try:
-        send_telegram_message("✅ Bot de promoções iniciado e rodando 24h.")
+        send_telegram_message("🤖 Bot online e monitorando promoções de GPU.")
     except Exception as e:
         print(f"Erro ao enviar mensagem inicial: {e}")
 
