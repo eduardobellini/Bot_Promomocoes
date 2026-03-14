@@ -11,8 +11,8 @@ from urllib.parse import quote_plus
 # CONFIGURAÇÕES
 # =========================
 
-TELEGRAM_TOKEN = os.getenv("8633387104:AAGvRAQHJ_umx4d-l4EmeKJWTpQmRqT65Sc")
-TELEGRAM_CHAT_ID = os.getenv("6960388628")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Tempo entre verificações (em segundos)
 CHECK_INTERVAL = 900  # 15 minutos
