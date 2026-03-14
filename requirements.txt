@@ -4,3 +4,4 @@ python-telegram-bot
 lxml
 pandas
 schedule
+python .\Bot.py
