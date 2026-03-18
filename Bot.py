@@ -94,6 +94,11 @@ def send_telegram_message(text):
     }
 
     response = requests.post(url, data=payload, timeout=20)
+    print(f"[Telegram] status={response.status_code} response={response.text}")
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Telegram API error: {response.status_code} - {response.text}")
+
     response.raise_for_status()
 
 # =========================
@@ -136,8 +141,9 @@ def is_good_offer(title, price):
     if not looks_like_gpu(title):
         return False
 
+    # Se não conseguimos capturar preço, ainda considera para inspecionar (envia alerta de primeira vez)
     if price is None:
-        return False
+        return True
 
     if price < MIN_GLOBAL_PRICE:
         return False
@@ -219,13 +225,13 @@ def check_price_drop(item, history):
         }
         return None
 
-    previous_price = old_data.get("last_price")
+    previous_price = old_data.get("last_price", current_price)
     lowest_price = old_data.get("lowest_price", current_price)
 
     drop_value = 0.0
     drop_percent = 0.0
 
-    if previous_price and current_price < previous_price:
+    if previous_price is not None and current_price < previous_price:
         drop_value = previous_price - current_price
         drop_percent = (drop_value / previous_price) * 100
 
@@ -476,7 +482,10 @@ def collect_all_offers():
     return deduplicate_items(all_items)
 
 def format_offer_message(item):
-    price_text = f"R$ {item['price']:.2f}".replace(".", ",")
+    if item['price'] is not None:
+        price_text = f"R$ {item['price']:.2f}".replace(".", ",")
+    else:
+        price_text = "Preço não disponível"
 
     return (
         f"🔥 GPU encontrada dentro da faixa\n\n"
