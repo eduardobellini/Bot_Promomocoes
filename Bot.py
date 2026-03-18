@@ -257,7 +257,7 @@ def check_price_drop(item, history):
 # REQUISIÇÕES
 # =========================
 
-def fetch_html(url, retries=3):
+def fetch_html(url, retries=3, extra_headers=None):
     headers = {
         "User-Agent": random.choice([
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -270,7 +270,12 @@ def fetch_html(url, retries=3):
         "Pragma": "no-cache",
         "DNT": "1",
         "Upgrade-Insecure-Requests": "1",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
     }
+
+    if extra_headers:
+        headers.update(extra_headers)
 
     last_error = None
 
@@ -360,7 +365,10 @@ def search_pichau(query):
     url = f"https://www.pichau.com.br/search?q={quote_plus(query)}"
 
     try:
-        html_text = fetch_html(url)
+        html_text = fetch_html(url, extra_headers={
+            "Referer": "https://www.pichau.com.br/",
+            "Origin": "https://www.pichau.com.br",
+        })
         soup = BeautifulSoup(html_text, "lxml")
 
         cards = soup.select("a[href*='/placa-de-video'], a[href*='/product']")
