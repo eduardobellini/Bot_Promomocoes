@@ -90,6 +90,7 @@ def send_telegram_message(text):
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": text,
+        "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
 
@@ -496,11 +497,12 @@ def format_offer_message(item):
         price_text = "Preço não disponível"
 
     return (
-        f"🔥 GPU encontrada dentro da faixa\n\n"
-        f"🏪 Loja: {item['store']}\n"
-        f"🎮 Produto: {item['title']}\n"
-        f"💰 Preço: {price_text}\n\n"
-        f"🔗 {item['link']}"
+        f"<b>🔥 Nova oferta de GPU!</b>\n"
+        f"<i>Encontrada dentro da faixa desejada</i>\n\n"
+        f"<b>🏪 Loja:</b> {item['store']}\n"
+        f"<b>🎮 Produto:</b> {html.escape(item['title'])}\n"
+        f"<b>💰 Preço:</b> {price_text}\n"
+        f"<b>🔗 Link:</b> <a href=\"{item['link']}\">Clique aqui</a>"
     )
 
 def format_price_drop_message(item, drop_info):
@@ -510,13 +512,14 @@ def format_price_drop_message(item, drop_info):
     drop_percent_text = f"{drop_info['drop_percent']:.1f}%".replace(".", ",")
 
     return (
-        f"🔥 Queda de preço detectada\n\n"
-        f"🏪 Loja: {item['store']}\n"
-        f"🎮 Produto: {item['title']}\n"
-        f"💰 Agora: {current_text}\n"
-        f"📉 Antes: {previous_text}\n"
-        f"💸 Queda: {drop_value_text} ({drop_percent_text})\n\n"
-        f"🔗 {item['link']}"
+        f"<b>📉 Queda de preço detectada!</b>\n"
+        f"<i>Oportunidade para compra imediata</i>\n\n"
+        f"<b>🏪 Loja:</b> {item['store']}\n"
+        f"<b>🎮 Produto:</b> {html.escape(item['title'])}\n"
+        f"<b>💰 Agora:</b> {current_text}\n"
+        f"<b>📉 Antes:</b> {previous_text}\n"
+        f"<b>💸 Desconto:</b> {drop_value_text} ({drop_percent_text})\n"
+        f"<b>🔗 Link:</b> <a href=\"{item['link']}\">Clique aqui</a>"
     )
 
 def process_offers():
