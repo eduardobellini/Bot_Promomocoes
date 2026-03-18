@@ -26,6 +26,8 @@ MAX_GLOBAL_PRICE = 1800.0
 MIN_DROP_ALERT = 50.0      # alerta se cair pelo menos R$ 50
 MIN_DROP_PERCENT = 5.0     # ou pelo menos 5%
 
+PICHUAU_PROXY = os.getenv("PICHUAU_PROXY")
+
 SEARCH_TERMS = [
     "placa de video",
     "gpu",
@@ -258,7 +260,7 @@ def check_price_drop(item, history):
 # REQUISIÇÕES
 # =========================
 
-def fetch_html(url, retries=3, extra_headers=None):
+def fetch_html(url, retries=3, extra_headers=None, proxies=None):
     headers = {
         "User-Agent": random.choice([
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -279,6 +281,18 @@ def fetch_html(url, retries=3, extra_headers=None):
         headers.update(extra_headers)
 
     last_error = None
+
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, headers=headers, timeout=30, proxies=proxies)
+            response.raise_for_status()
+            return response.text
+        except Exception as e:
+            last_error = e
+            print(f"Erro ao acessar {url} | tentativa {attempt + 1}/{retries}: {e}")
+            time.sleep(random.uniform(2, 5))
+
+    raise last_error
 
     for attempt in range(retries):
         try:
@@ -365,11 +379,19 @@ def search_pichau(query):
     items = []
     url = f"https://www.pichau.com.br/search?q={quote_plus(query)}"
 
+    proxies = None
+    if PICHUAU_PROXY:
+        proxies = {"http": PICHUAU_PROXY, "https": PICHUAU_PROXY}
+
     try:
-        html_text = fetch_html(url, extra_headers={
-            "Referer": "https://www.pichau.com.br/",
-            "Origin": "https://www.pichau.com.br",
-        })
+        html_text = fetch_html(
+            url,
+            extra_headers={
+                "Referer": "https://www.pichau.com.br/",
+                "Origin": "https://www.pichau.com.br",
+            },
+            proxies=proxies,
+        )
         soup = BeautifulSoup(html_text, "lxml")
 
         cards = soup.select("a[href*='/placa-de-video'], a[href*='/product']")
